@@ -66,7 +66,6 @@ function initPeer() {
     if (peer) return;
     $('#onlineStatus').text('Status: Connecting to Server...').removeClass('text-emerald-400 text-red-400').addClass('text-amber-400');
     
-    // ฟังก์ชันสร้างรหัส 6 หลัก
     function createPeerWithPIN() {
         const pin = Math.floor(100000 + Math.random() * 900000).toString();
         peer = new Peer(pin);
@@ -86,7 +85,6 @@ function initPeer() {
         });
 
         peer.on('error', function(err) {
-            // ถ้ารหัส 6 หลักนี้มีคนอื่นใช้อยู่ ให้สุ่มใหม่
             if (err.type === 'unavailable-id') {
                 peer.destroy();
                 createPeerWithPIN();
@@ -96,7 +94,6 @@ function initPeer() {
             }
         });
     }
-    
     createPeerWithPIN();
 }
 
@@ -106,7 +103,6 @@ function connectToPeer(id) {
     
     const conn = peer.connect(id, { reliable: true });
     
-    // เพิ่ม Timeout ป้องกันการค้าง 10 วินาที
     const connectionTimeout = setTimeout(() => {
         if (onlineRole !== 'guest') {
             $('#onlineStatus').text('Status: Connection failed. Check ID.').removeClass('text-amber-400 text-emerald-400').addClass('text-red-400');
@@ -115,7 +111,7 @@ function connectToPeer(id) {
     }, 10000);
 
     conn.on('open', function() {
-        clearTimeout(connectionTimeout); // ยกเลิก Timeout เมื่อเชื่อมสำเร็จ
+        clearTimeout(connectionTimeout); 
         peerConnection = conn;
         onlineRole = 'guest';
         setupConnectionHandlers(conn);
@@ -152,8 +148,7 @@ function setupConnectionHandlers(conn) {
             $('#evalBarWhite').css('height', '50%');
             $('#evalText').text('0.0').removeClass('text-slate-800').addClass('text-slate-400');
             
-            stopClock();
-            updateUI(); updateClockUI(); requestEvaluation();
+            stopClock(); updateUI(); updateClockUI(); requestEvaluation();
         } 
         else if (data.type === 'move') {
             isReceivingMove = true;
@@ -286,6 +281,7 @@ function showPromotionModal(color) {
     $('#promotionModal').removeClass('hidden').addClass('flex');
 }
 
+// Global scope for onclick
 window.completePromotion = function(pieceType) {
     $('#promotionModal').addClass('hidden').removeClass('flex');
     if (!pendingPromotionMove) return;
@@ -545,197 +541,9 @@ function updateClockUI() {
     }
 }
 
-// --- Events Setup ---
-$('#gameMode').change(function() {
-    const v = $(this).val();
-    $('#difficultyContainer').toggle(v === 'ai');
-    $('#colorConfig').toggle(v === 'ai' || v === 'online');
-    
-    if (v === 'online') {
-        $('#onlineConfig').removeClass('hidden').addClass('flex');
-        initPeer();
-        $('#startGameBtn').prop('disabled', true).addClass('opacity-50 cursor-not-allowed');
-    } else {
-        $('#onlineConfig').addClass('hidden').removeClass('flex');
-        $('#startGameBtn').prop('disabled', false).removeClass('opacity-50 cursor-not-allowed');
-        if (peerConnection) { peerConnection.close(); peerConnection = null; }
-        if (peer) { peer.destroy(); peer = null; }
-    }
-});
-
-$('#copyPeerIdBtn').click(function() {
-    const input = document.getElementById("myPeerId");
-    input.select(); document.execCommand("copy");
-    $(this).html('<i class="fa-solid fa-check text-emerald-400"></i>');
-    setTimeout(() => $(this).html('<i class="fa-solid fa-copy"></i>'), 2000);
-});
-
-$('#joinPeerBtn').click(function() {
-    const id = $('#joinPeerId').val().trim();
-    if (id) connectToPeer(id);
-});
-
-$('#startGameBtn').click(() => {
-    const mode = $('#gameMode').val();
-    if (mode === 'online' && !peerConnection) {
-        alert("Please wait for a friend to connect or join a room first.");
-        return;
-    }
-
-    $('#setupScreen').removeClass('flex').addClass('hidden');
-    $('#mainGameUI').removeClass('hidden').addClass('flex');
-    board.resize();
-
-    const selectedTheme = boardThemes[$('#boardTheme').val()];
-    document.documentElement.style.setProperty('--board-light', selectedTheme.light);
-    document.documentElement.style.setProperty('--board-dark', selectedTheme.dark);
-
-    const selectedTime = parseInt($('#timeControl').val(), 10);
-    timers = { w: selectedTime, b: selectedTime }; 
-    
-    const pColor = mode === 'pvp' ? 'w' : $('#playerColor').val(); 
-    
-    if (mode === 'online') {
-        myOnlineColor = pColor;
-        const guestColor = pColor === 'w' ? 'b' : 'w';
-        peerConnection.send({
-            type: 'start',
-            time: selectedTime,
-            theme: $('#boardTheme').val(),
-            guestColor: guestColor
-        });
-        $('#hintBtn, #undoBtn').hide(); 
-    } else {
-        $('#hintBtn, #undoBtn').show();
-    }
-    
-    game.reset(); 
-    board.orientation(pColor === 'w' ? 'white' : 'black');
-    board.start(); 
-    
-    isAiThinking = false; engineAction = 'idle';
-    $('#evalBarWhite').css('height', '50%'); $('#evalText').text('0.0').removeClass('text-slate-800').addClass('text-slate-400');
-    
-    stopClock(); updateUI(); updateClockUI();
-    
-    if(mode === 'ai') {
-        stockfish.postMessage("ucinewgame");
-        if (pColor === 'b') setTimeout(makeAiMove, 250);
-        else requestEvaluation();
-    } else {
-        requestEvaluation();
-    }
-});
-
-$('#newGameBtn').click(() => {
-    if(game.history().length > 0 && !game.game_over()) {
-        if(!confirm("Game in progress. Are you sure you want to abandon it?")) return;
-    }
-    stopClock(); gameActive = false;
-    
-    if (peerConnection) { peerConnection.close(); peerConnection = null; }
-    if (peer) { peer.destroy(); peer = null; $('#gameMode').val('ai').trigger('change'); }
-
-    $('#mainGameUI').removeClass('flex').addClass('hidden');
-    $('#setupScreen').removeClass('hidden').addClass('flex');
-});
-
-$('#undoBtn').click(() => {
-    if(isAiThinking || game.history().length === 0 || $('#gameMode').val() === 'online') return;
-    game.undo(); if($('#gameMode').val() === 'ai') game.undo();
-    board.position(game.fen()); updateUI(); requestEvaluation();
-    if(game.history().length === 0) stopClock();
-});
-
-$('#hintBtn').click(() => {
-    if(isAiThinking || game.game_over() || engineAction === 'move' || $('#gameMode').val() === 'online') return;
-    $('.square-55d63').removeClass('highlight-hint');
-    engineAction = 'hint';
-    stockfish.postMessage(`position fen ${game.fen()}`);
-    stockfish.postMessage(`go depth 10`);
-});
-
-$('#resignBtn').click(() => {
-    if (game.game_over() || !gameActive) return;
-    if (confirm("Are you sure you want to resign?")) {
-        if ($('#gameMode').val() === 'online' && peerConnection) {
-            peerConnection.send({ type: 'resign' });
-        }
-        stopClock(); gameActive = false;
-        const loser = game.turn() === 'w' ? 'White' : 'Black';
-        const winner = game.turn() === 'w' ? 'Black' : 'White';
-        $('#statusTitle').text("Resignation"); $('#statusDesc').text(`${loser} resigned.`);
-        showModal("Resignation", `You resigned. ${winner} wins.`, "fa-flag", "text-slate-400");
-        playSound('gameover');
-    }
-});
-
-$('#drawBtn').click(() => {
-    if (game.game_over() || !gameActive) return;
-    
-    const mode = $('#gameMode').val();
-    if (mode === 'online' && peerConnection) {
-        peerConnection.send({ type: 'draw_offer' });
-        alert("Draw offer sent. Waiting for opponent...");
-    } else if (mode === 'ai') {
-        const aiScore = ($('#playerColor').val() === 'w' ? -currentEvalScore : currentEvalScore);
-        if (aiScore > 100) alert("AI declines the draw offer.");
-        else {
-            if (confirm("AI accepts the draw. End game?")) {
-                stopClock(); gameActive = false;
-                $('#statusTitle').text("Draw Agreed"); $('#statusDesc').text(`The game is a draw by agreement.`);
-                showModal("Draw", `Draw by agreement.`, "fa-handshake", "text-slate-400");
-                playSound('gameover');
-            }
-        }
-    } else {
-        if (confirm("Player offers a draw. Do you accept?")) {
-            stopClock(); gameActive = false;
-            $('#statusTitle').text("Draw Agreed"); $('#statusDesc').text(`The game is a draw by agreement.`);
-            showModal("Draw", `Draw by agreement.`, "fa-handshake", "text-slate-400");
-            playSound('gameover');
-        }
-    }
-});
-
-$('#soundBtn').click(() => {
-    soundEnabled = !soundEnabled; const i = $('#soundIcon');
-    if(soundEnabled) i.removeClass('fa-volume-xmark text-slate-500').addClass('fa-volume-high text-indigo-400');
-    else i.removeClass('fa-volume-high text-indigo-400').addClass('fa-volume-xmark text-slate-500');
-});
-
-$('#pgnBtn').click(() => {
-    const pgn = game.pgn(); if(!pgn) return alert("No moves yet.");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([pgn], {type: "text/plain"}));
-    a.download = "elite_chess.pgn"; a.click();
-});
-
-$('#modalCloseBtn').click(() => {
-    $('#gameOverModal').removeClass('flex').addClass('hidden');
-    $('#gameOverModal > div').removeClass('scale-100').addClass('scale-95');
-});
-
-$('#modalPlayAgainBtn').click(() => {
-    $('#modalCloseBtn').click(); $('#newGameBtn').click();
-});
-
-// Board Themes Event
-const boardThemes = {
-    slate: { light: '#e2e8f0', dark: '#64748b' },
-    green: { light: '#ebecd0', dark: '#779556' },
-    wood: { light: '#f0d9b5', dark: '#b58863' },
-    blue: { light: '#dee3e6', dark: '#8ca2ad' }
-};
-
-$('#boardTheme').change(function() {
-    const selectedTheme = boardThemes[$(this).val()];
-    document.documentElement.style.setProperty('--board-light', selectedTheme.light);
-    document.documentElement.style.setProperty('--board-dark', selectedTheme.dark);
-});
-
-// --- Start App ---
+// --- App Initialization & Events ---
 $(document).ready(function() {
+    // 1. Initial Board
     board = Chessboard('board', {
         draggable: true, position: 'start',
         onDragStart: onDragStart, onDrop: onDrop, onSnapEnd: onSnapEnd,
@@ -745,6 +553,7 @@ $(document).ready(function() {
     $(window).resize(board.resize);
     initStockfish();
 
+    // 2. Tap-to-move
     let lastTap = 0;
     $('#board').on('mousedown touchstart', '.square-55d63', function(e) {
         const timeNow = new Date().getTime();
@@ -776,5 +585,188 @@ $(document).ready(function() {
         } else {
             clearSelection();
         }
+    });
+
+    // 3. UI Buttons & Setup Handlers
+    $('#gameMode').change(function() {
+        const v = $(this).val();
+        $('#difficultyContainer').toggle(v === 'ai');
+        $('#colorConfig').toggle(v === 'ai' || v === 'online');
+        
+        if (v === 'online') {
+            $('#onlineConfig').removeClass('hidden').addClass('flex');
+            initPeer();
+            $('#startGameBtn').prop('disabled', true).addClass('opacity-50 cursor-not-allowed');
+        } else {
+            $('#onlineConfig').addClass('hidden').removeClass('flex');
+            $('#startGameBtn').prop('disabled', false).removeClass('opacity-50 cursor-not-allowed');
+            if (peerConnection) { peerConnection.close(); peerConnection = null; }
+            if (peer) { peer.destroy(); peer = null; }
+        }
+    });
+
+    $('#copyPeerIdBtn').click(function() {
+        const input = document.getElementById("myPeerId");
+        input.select(); document.execCommand("copy");
+        $(this).html('<i class="fa-solid fa-check text-emerald-400"></i>');
+        setTimeout(() => $(this).html('<i class="fa-solid fa-copy"></i>'), 2000);
+    });
+
+    $('#joinPeerBtn').click(function() {
+        const id = $('#joinPeerId').val().trim();
+        if (id) connectToPeer(id);
+    });
+
+    $('#boardTheme').change(function() {
+        const selectedTheme = boardThemes[$(this).val()];
+        document.documentElement.style.setProperty('--board-light', selectedTheme.light);
+        document.documentElement.style.setProperty('--board-dark', selectedTheme.dark);
+    });
+
+    $('#startGameBtn').click(() => {
+        const mode = $('#gameMode').val();
+        if (mode === 'online' && !peerConnection) {
+            alert("Please wait for a friend to connect or join a room first.");
+            return;
+        }
+
+        $('#setupScreen').removeClass('flex').addClass('hidden');
+        $('#mainGameUI').removeClass('hidden').addClass('flex');
+        board.resize();
+
+        const selectedTheme = boardThemes[$('#boardTheme').val()];
+        document.documentElement.style.setProperty('--board-light', selectedTheme.light);
+        document.documentElement.style.setProperty('--board-dark', selectedTheme.dark);
+
+        const selectedTime = parseInt($('#timeControl').val(), 10);
+        timers = { w: selectedTime, b: selectedTime }; 
+        
+        const pColor = mode === 'pvp' ? 'w' : $('#playerColor').val(); 
+        
+        if (mode === 'online') {
+            myOnlineColor = pColor;
+            const guestColor = pColor === 'w' ? 'b' : 'w';
+            peerConnection.send({
+                type: 'start',
+                time: selectedTime,
+                theme: $('#boardTheme').val(),
+                guestColor: guestColor
+            });
+            $('#hintBtn, #undoBtn').hide(); 
+        } else {
+            $('#hintBtn, #undoBtn').show();
+        }
+        
+        game.reset(); 
+        board.orientation(pColor === 'w' ? 'white' : 'black');
+        board.start(); 
+        
+        isAiThinking = false; engineAction = 'idle';
+        $('#evalBarWhite').css('height', '50%'); $('#evalText').text('0.0').removeClass('text-slate-800').addClass('text-slate-400');
+        
+        stopClock(); updateUI(); updateClockUI();
+        
+        if(mode === 'ai') {
+            if (stockfish) stockfish.postMessage("ucinewgame");
+            if (pColor === 'b') setTimeout(makeAiMove, 250);
+            else requestEvaluation();
+        } else {
+            requestEvaluation();
+        }
+    });
+
+    $('#newGameBtn').click(() => {
+        if(game.history().length > 0 && !game.game_over()) {
+            if(!confirm("Game in progress. Are you sure you want to abandon it?")) return;
+        }
+        stopClock(); gameActive = false;
+        
+        if (peerConnection) { peerConnection.close(); peerConnection = null; }
+        if (peer) { peer.destroy(); peer = null; $('#gameMode').val('ai').trigger('change'); }
+
+        $('#mainGameUI').removeClass('flex').addClass('hidden');
+        $('#setupScreen').removeClass('hidden').addClass('flex');
+    });
+
+    $('#undoBtn').click(() => {
+        if(isAiThinking || game.history().length === 0 || $('#gameMode').val() === 'online') return;
+        game.undo(); if($('#gameMode').val() === 'ai') game.undo();
+        board.position(game.fen()); updateUI(); requestEvaluation();
+        if(game.history().length === 0) stopClock();
+    });
+
+    $('#hintBtn').click(() => {
+        if(isAiThinking || game.game_over() || engineAction === 'move' || $('#gameMode').val() === 'online') return;
+        $('.square-55d63').removeClass('highlight-hint');
+        engineAction = 'hint';
+        if (stockfish) {
+            stockfish.postMessage(`position fen ${game.fen()}`);
+            stockfish.postMessage(`go depth 10`);
+        }
+    });
+
+    $('#resignBtn').click(() => {
+        if (game.game_over() || !gameActive) return;
+        if (confirm("Are you sure you want to resign?")) {
+            if ($('#gameMode').val() === 'online' && peerConnection) {
+                peerConnection.send({ type: 'resign' });
+            }
+            stopClock(); gameActive = false;
+            const loser = game.turn() === 'w' ? 'White' : 'Black';
+            const winner = game.turn() === 'w' ? 'Black' : 'White';
+            $('#statusTitle').text("Resignation"); $('#statusDesc').text(`${loser} resigned.`);
+            showModal("Resignation", `You resigned. ${winner} wins.`, "fa-flag", "text-slate-400");
+            playSound('gameover');
+        }
+    });
+
+    $('#drawBtn').click(() => {
+        if (game.game_over() || !gameActive) return;
+        
+        const mode = $('#gameMode').val();
+        if (mode === 'online' && peerConnection) {
+            peerConnection.send({ type: 'draw_offer' });
+            alert("Draw offer sent. Waiting for opponent...");
+        } else if (mode === 'ai') {
+            const aiScore = ($('#playerColor').val() === 'w' ? -currentEvalScore : currentEvalScore);
+            if (aiScore > 100) alert("AI declines the draw offer.");
+            else {
+                if (confirm("AI accepts the draw. End game?")) {
+                    stopClock(); gameActive = false;
+                    $('#statusTitle').text("Draw Agreed"); $('#statusDesc').text(`The game is a draw by agreement.`);
+                    showModal("Draw", `Draw by agreement.`, "fa-handshake", "text-slate-400");
+                    playSound('gameover');
+                }
+            }
+        } else {
+            if (confirm("Player offers a draw. Do you accept?")) {
+                stopClock(); gameActive = false;
+                $('#statusTitle').text("Draw Agreed"); $('#statusDesc').text(`The game is a draw by agreement.`);
+                showModal("Draw", `Draw by agreement.`, "fa-handshake", "text-slate-400");
+                playSound('gameover');
+            }
+        }
+    });
+
+    $('#soundBtn').click(() => {
+        soundEnabled = !soundEnabled; const i = $('#soundIcon');
+        if(soundEnabled) i.removeClass('fa-volume-xmark text-slate-500').addClass('fa-volume-high text-indigo-400');
+        else i.removeClass('fa-volume-high text-indigo-400').addClass('fa-volume-xmark text-slate-500');
+    });
+
+    $('#pgnBtn').click(() => {
+        const pgn = game.pgn(); if(!pgn) return alert("No moves yet.");
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([pgn], {type: "text/plain"}));
+        a.download = "elite_chess.pgn"; a.click();
+    });
+
+    $('#modalCloseBtn').click(() => {
+        $('#gameOverModal').removeClass('flex').addClass('hidden');
+        $('#gameOverModal > div').removeClass('scale-100').addClass('scale-95');
+    });
+
+    $('#modalPlayAgainBtn').click(() => {
+        $('#modalCloseBtn').click(); $('#newGameBtn').click();
     });
 });
