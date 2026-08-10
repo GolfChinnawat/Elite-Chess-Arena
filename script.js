@@ -21,16 +21,14 @@ let onlineRole = null;
 let currentRoomId = null;
 
 // === ใส่ FIREBASE CONFIG ของคุณที่นี่ ===
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyADDH6zlPkYJbeefLM9e5N_xY96_23ZIO0",
-  authDomain: "elite-chess-arena.firebaseapp.com",
-  databaseURL: "https://elite-chess-arena-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "elite-chess-arena",
-  storageBucket: "elite-chess-arena.firebasestorage.app",
-  messagingSenderId: "554935042759",
-  appId: "1:554935042759:web:8a520b438d5975a8c7b4e2",
-  measurementId: "G-YFFGSSBB7G"
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT_ID.firebasedatabase.app",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_MESSAGING_ID",
+    appId: "YOUR_APP_ID"
 };
 // ======================================
 
@@ -90,7 +88,8 @@ function createRoom() {
     roomRef = db.ref('chess_rooms/' + currentRoomId);
     onlineRole = 'host';
     
-    roomRef.remove().then(() => {
+    // ยืนยันการสร้างห้องลง Database ก่อนรับคนเข้า
+    roomRef.set({ created: true, timestamp: firebase.database.ServerValue.TIMESTAMP }).then(() => {
         $('#myPeerId').val(currentRoomId);
         $('#onlineStatus').text('Status: Waiting for friend to join...').removeClass('text-amber-400 text-red-400').addClass('text-emerald-400');
         listenForEvents();
@@ -102,18 +101,25 @@ function joinRoom(id) {
     currentRoomId = id;
     roomRef = db.ref('chess_rooms/' + currentRoomId);
     
-    // เช็คว่าห้องมีจริงไหม
-    roomRef.child('events').once('value', snapshot => {
-        onlineRole = 'guest';
-        $('#onlineStatus').text('Status: Connected! Waiting for host to start...').removeClass('text-amber-400 text-red-400').addClass('text-emerald-400');
-        $('#startGameBtn').prop('disabled', true).addClass('opacity-50 cursor-not-allowed');
-        
-        listenForEvents();
-        sendOnlineEvent('join', {});
+    $('#onlineStatus').text('Status: Joining...').removeClass('text-red-400 text-emerald-400').addClass('text-amber-400');
+
+    // ตรวจสอบว่าห้องที่กรอกรหัสมา "มีอยู่จริง" หรือไม่
+    roomRef.once('value', snapshot => {
+        if (snapshot.exists()) {
+            onlineRole = 'guest';
+            $('#onlineStatus').text('Status: Connected! Waiting for host to start...').removeClass('text-amber-400 text-red-400').addClass('text-emerald-400');
+            $('#startGameBtn').prop('disabled', true).addClass('opacity-50 cursor-not-allowed');
+            
+            listenForEvents();
+            sendOnlineEvent('join', {});
+        } else {
+            $('#onlineStatus').text('Status: Room not found. Check ID.').removeClass('text-emerald-400 text-amber-400').addClass('text-red-400');
+            roomRef = null;
+        }
     });
 }
 
-// ฟังก์ชันส่ง Event ผ่าน Firebase
+// ฟังก์ชันส่งข้อมูลเข้าห้อง
 function sendOnlineEvent(type, payload = {}) {
     if (roomRef && onlineRole) {
         payload.sender = onlineRole;
@@ -122,10 +128,11 @@ function sendOnlineEvent(type, payload = {}) {
     }
 }
 
+// ฟังก์ชันรับการแจ้งเตือนจากห้อง
 function listenForEvents() {
     roomRef.child('events').on('child_added', function(snapshot) {
         const data = snapshot.val();
-        if (data.sender === onlineRole) return; // ไม่ประมวลผล event ที่ตัวเองส่งไป
+        if (!data || data.sender === onlineRole) return; // ไม่ประมวลผล event ของตัวเอง
 
         if (data.type === 'join' && onlineRole === 'host') {
             $('#onlineStatus').text('Status: Friend joined! Click Start Game.').removeClass('text-amber-400').addClass('text-emerald-400');
@@ -134,6 +141,7 @@ function listenForEvents() {
             $('#startGameBtn').prop('disabled', false).removeClass('opacity-50 cursor-not-allowed');
         }
         else if (data.type === 'start') {
+            // โค้ดอัปเดตหน้า UI ของ Guest เมื่อเริ่มเกม
             myOnlineColor = data.guestColor;
             const selectedTheme = boardThemes[data.theme];
             document.documentElement.style.setProperty('--board-light', selectedTheme.light);
@@ -145,6 +153,10 @@ function listenForEvents() {
             $('#mainGameUI').removeClass('hidden').addClass('flex');
             board.resize();
             
+            $('#gameMode').val('online');
+            $('#hintBtn').hide();
+            $('#undoBtn').show(); // เปิดปุ่ม Undo ให้โหมดออนไลน์
+
             game.reset(); 
             board.orientation(myOnlineColor === 'w' ? 'white' : 'black');
             board.start(); 
@@ -159,7 +171,7 @@ function listenForEvents() {
             isReceivingMove = true;
             let m = game.move(data.move);
             if(m) {
-                timers = data.timers; 
+                if (data.timers) timers = data.timers; 
                 board.position(game.fen());
                 afterMove(m);
             }
@@ -180,6 +192,8 @@ function listenForEvents() {
                 $('#statusDesc').text(`Game drawn by agreement.`);
                 showModal("Draw", `Draw by agreement.`, "fa-handshake", "text-slate-400");
                 playSound('gameover');
+            } else {
+                sendOnlineEvent('draw_decline');
             }
         }
         else if (data.type === 'draw_accept') {
@@ -188,6 +202,26 @@ function listenForEvents() {
             $('#statusDesc').text(`Opponent accepted the draw.`);
             showModal("Draw", `Draw by agreement.`, "fa-handshake", "text-slate-400");
             playSound('gameover');
+        }
+        else if (data.type === 'draw_decline') {
+            alert("Opponent declined your draw offer.");
+        }
+        else if (data.type === 'undo_request') {
+            if (confirm("Opponent requested an undo. Do you accept?")) {
+                sendOnlineEvent('undo_accept');
+                game.undo(); board.position(game.fen()); updateUI(); requestEvaluation();
+                if(game.history().length === 0) stopClock();
+            } else {
+                sendOnlineEvent('undo_decline');
+            }
+        }
+        else if (data.type === 'undo_accept') {
+            alert("Opponent accepted your undo request.");
+            game.undo(); board.position(game.fen()); updateUI(); requestEvaluation();
+            if(game.history().length === 0) stopClock();
+        }
+        else if (data.type === 'undo_decline') {
+            alert("Opponent declined your undo request.");
         }
         else if (data.type === 'leave') {
             alert("Opponent has left the room.");
@@ -358,7 +392,10 @@ function afterMove(move) {
     const pColor = $('#playerColor').val();
 
     if (mode === 'online' && !isReceivingMove) {
-        sendOnlineEvent('move', { move: { from: move.from, to: move.to, promotion: move.promotion }, timers: timers });
+        // ส่งข้อมูลให้เซิร์ฟเวอร์แบบปลอดภัย (ตัด property ที่ undefined ทิ้ง)
+        let movePayload = { from: move.from, to: move.to };
+        if (move.promotion) movePayload.promotion = move.promotion;
+        sendOnlineEvent('move', { move: movePayload, timers: timers });
     }
 
     if (mode === 'pvp') {
@@ -640,7 +677,8 @@ $(document).ready(function() {
                 theme: $('#boardTheme').val(),
                 guestColor: guestColor
             });
-            $('#hintBtn, #undoBtn').hide(); 
+            $('#hintBtn').hide(); 
+            $('#undoBtn').show(); // อัปเดตให้คนสร้างห้องเห็นปุ่ม Undo ได้
         } else {
             $('#hintBtn, #undoBtn').show();
         }
@@ -676,9 +714,22 @@ $(document).ready(function() {
         $('#setupScreen').removeClass('hidden').addClass('flex');
     });
 
+    // ปุ่ม Undo
     $('#undoBtn').click(() => {
-        if(isAiThinking || game.history().length === 0 || $('#gameMode').val() === 'online') return;
-        game.undo(); if($('#gameMode').val() === 'ai') game.undo();
+        if(isAiThinking || game.history().length === 0) return;
+        
+        const mode = $('#gameMode').val();
+        if (mode === 'online') {
+            if (confirm("Request undo from opponent?")) {
+                sendOnlineEvent('undo_request');
+                alert("Undo request sent. Waiting for opponent to accept...");
+            }
+            return;
+        }
+
+        // โหมดปกติ Undo ได้เลย
+        game.undo(); 
+        if(mode === 'ai') game.undo(); // AI ย้อน 2 ตา
         board.position(game.fen()); updateUI(); requestEvaluation();
         if(game.history().length === 0) stopClock();
     });
@@ -708,13 +759,14 @@ $(document).ready(function() {
         }
     });
 
+    // ปุ่มขอเสมอ
     $('#drawBtn').click(() => {
         if (game.game_over() || !gameActive) return;
         
         const mode = $('#gameMode').val();
         if (mode === 'online' && roomRef) {
             sendOnlineEvent('draw_offer');
-            alert("Draw offer sent. Waiting for opponent...");
+            alert("Draw offer sent. Waiting for opponent to accept...");
         } else if (mode === 'ai') {
             const aiScore = ($('#playerColor').val() === 'w' ? -currentEvalScore : currentEvalScore);
             if (aiScore > 100) alert("AI declines the draw offer.");
