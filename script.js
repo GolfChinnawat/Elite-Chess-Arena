@@ -12,12 +12,27 @@ let gameActive = false;
 let selectedSquare = null;
 let pendingPromotionMove = null;
 
-// Online Multiplayer Variables
-let peer = null;
-let peerConnection = null;
+// Firebase Multiplayer Variables
+let db = null;
+let roomRef = null;
 let isReceivingMove = false;
 let myOnlineColor = 'w';
 let onlineRole = null;
+let currentRoomId = null;
+
+// === ใส่ FIREBASE CONFIG ของคุณที่นี่ ===
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyADDH6zlPkYJbeefLM9e5N_xY96_23ZIO0",
+  authDomain: "elite-chess-arena.firebaseapp.com",
+  databaseURL: "https://elite-chess-arena-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "elite-chess-arena",
+  storageBucket: "elite-chess-arena.firebasestorage.app",
+  messagingSenderId: "554935042759",
+  appId: "1:554935042759:web:8a520b438d5975a8c7b4e2",
+  measurementId: "G-YFFGSSBB7G"
+};
+// ======================================
 
 const pieceValues = { 'p': 1, 'n': 3, 'b': 3, 'r': 5, 'q': 9 };
 
@@ -61,75 +76,65 @@ function playSound(type) {
     }
 }
 
-// --- PeerJS / Online Logic ---
-function initPeer() {
-    if (peer) return;
-    $('#onlineStatus').text('Status: Connecting to Server...').removeClass('text-emerald-400 text-red-400').addClass('text-amber-400');
-    
-    function createPeerWithPIN() {
-        const pin = Math.floor(100000 + Math.random() * 900000).toString();
-        peer = new Peer(pin);
-
-        peer.on('open', function(id) {
-            $('#myPeerId').val(id);
-            $('#onlineStatus').text('Status: Waiting for friend to join...');
-        });
-
-        peer.on('connection', function(conn) {
-            peerConnection = conn;
-            onlineRole = 'host';
-            setupConnectionHandlers(conn);
-            $('#onlineStatus').text('Status: Friend joined! Click Start Game.').removeClass('text-amber-400 text-red-400').addClass('text-emerald-400');
-            $('#joinPeerBtn').prop('disabled', true);
-            $('#joinPeerId').prop('disabled', true);
-        });
-
-        peer.on('error', function(err) {
-            if (err.type === 'unavailable-id') {
-                peer.destroy();
-                createPeerWithPIN();
-            } else {
-                console.error(err);
-                $('#onlineStatus').text('Status: Error (' + err.type + ')').removeClass('text-emerald-400 text-amber-400').addClass('text-red-400');
-            }
-        });
+// --- Firebase Logic ---
+function initFirebase() {
+    if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
     }
-    createPeerWithPIN();
+    db = firebase.database();
 }
 
-function connectToPeer(id) {
-    if (!peer) return;
-    $('#onlineStatus').text('Status: Connecting to host...').removeClass('text-emerald-400 text-red-400').addClass('text-amber-400');
+function createRoom() {
+    initFirebase();
+    currentRoomId = Math.floor(100000 + Math.random() * 900000).toString();
+    roomRef = db.ref('chess_rooms/' + currentRoomId);
+    onlineRole = 'host';
     
-    const conn = peer.connect(id, { reliable: true });
-    
-    const connectionTimeout = setTimeout(() => {
-        if (onlineRole !== 'guest') {
-            $('#onlineStatus').text('Status: Connection failed. Check ID.').removeClass('text-amber-400 text-emerald-400').addClass('text-red-400');
-            conn.close();
-        }
-    }, 10000);
+    roomRef.remove().then(() => {
+        $('#myPeerId').val(currentRoomId);
+        $('#onlineStatus').text('Status: Waiting for friend to join...').removeClass('text-amber-400 text-red-400').addClass('text-emerald-400');
+        listenForEvents();
+    });
+}
 
-    conn.on('open', function() {
-        clearTimeout(connectionTimeout); 
-        peerConnection = conn;
+function joinRoom(id) {
+    initFirebase();
+    currentRoomId = id;
+    roomRef = db.ref('chess_rooms/' + currentRoomId);
+    
+    // เช็คว่าห้องมีจริงไหม
+    roomRef.child('events').once('value', snapshot => {
         onlineRole = 'guest';
-        setupConnectionHandlers(conn);
         $('#onlineStatus').text('Status: Connected! Waiting for host to start...').removeClass('text-amber-400 text-red-400').addClass('text-emerald-400');
         $('#startGameBtn').prop('disabled', true).addClass('opacity-50 cursor-not-allowed');
-    });
-
-    conn.on('error', function(err) {
-        clearTimeout(connectionTimeout);
-        $('#onlineStatus').text('Status: Error connecting.').removeClass('text-amber-400 text-emerald-400').addClass('text-red-400');
+        
+        listenForEvents();
+        sendOnlineEvent('join', {});
     });
 }
 
-function setupConnectionHandlers(conn) {
-    conn.on('data', function(data) {
-        if (data.type === 'start') {
+// ฟังก์ชันส่ง Event ผ่าน Firebase
+function sendOnlineEvent(type, payload = {}) {
+    if (roomRef && onlineRole) {
+        payload.sender = onlineRole;
+        payload.type = type;
+        roomRef.child('events').push(payload);
+    }
+}
+
+function listenForEvents() {
+    roomRef.child('events').on('child_added', function(snapshot) {
+        const data = snapshot.val();
+        if (data.sender === onlineRole) return; // ไม่ประมวลผล event ที่ตัวเองส่งไป
+
+        if (data.type === 'join' && onlineRole === 'host') {
+            $('#onlineStatus').text('Status: Friend joined! Click Start Game.').removeClass('text-amber-400').addClass('text-emerald-400');
+            $('#joinPeerBtn').prop('disabled', true);
+            $('#joinPeerId').prop('disabled', true);
+            $('#startGameBtn').prop('disabled', false).removeClass('opacity-50 cursor-not-allowed');
+        }
+        else if (data.type === 'start') {
             myOnlineColor = data.guestColor;
-            
             const selectedTheme = boardThemes[data.theme];
             document.documentElement.style.setProperty('--board-light', selectedTheme.light);
             document.documentElement.style.setProperty('--board-dark', selectedTheme.dark);
@@ -169,7 +174,7 @@ function setupConnectionHandlers(conn) {
         }
         else if (data.type === 'draw_offer') {
             if (confirm("Opponent offers a draw. Do you accept?")) {
-                peerConnection.send({ type: 'draw_accept' });
+                sendOnlineEvent('draw_accept');
                 stopClock(); gameActive = false;
                 $('#statusTitle').text("Draw Agreed"); 
                 $('#statusDesc').text(`Game drawn by agreement.`);
@@ -184,13 +189,10 @@ function setupConnectionHandlers(conn) {
             showModal("Draw", `Draw by agreement.`, "fa-handshake", "text-slate-400");
             playSound('gameover');
         }
-    });
-
-    conn.on('close', function() {
-        alert("Peer disconnected.");
-        peerConnection = null;
-        onlineRole = null;
-        $('#newGameBtn').click();
+        else if (data.type === 'leave') {
+            alert("Opponent has left the room.");
+            $('#newGameBtn').click();
+        }
     });
 }
 
@@ -281,7 +283,6 @@ function showPromotionModal(color) {
     $('#promotionModal').removeClass('hidden').addClass('flex');
 }
 
-// Global scope for onclick
 window.completePromotion = function(pieceType) {
     $('#promotionModal').addClass('hidden').removeClass('flex');
     if (!pendingPromotionMove) return;
@@ -356,12 +357,8 @@ function afterMove(move) {
     const mode = $('#gameMode').val();
     const pColor = $('#playerColor').val();
 
-    if (mode === 'online' && !isReceivingMove && peerConnection) {
-        peerConnection.send({
-            type: 'move',
-            move: { from: move.from, to: move.to, promotion: move.promotion },
-            timers: timers
-        });
+    if (mode === 'online' && !isReceivingMove) {
+        sendOnlineEvent('move', { move: { from: move.from, to: move.to, promotion: move.promotion }, timers: timers });
     }
 
     if (mode === 'pvp') {
@@ -543,7 +540,6 @@ function updateClockUI() {
 
 // --- App Initialization & Events ---
 $(document).ready(function() {
-    // 1. Initial Board
     board = Chessboard('board', {
         draggable: true, position: 'start',
         onDragStart: onDragStart, onDrop: onDrop, onSnapEnd: onSnapEnd,
@@ -553,7 +549,6 @@ $(document).ready(function() {
     $(window).resize(board.resize);
     initStockfish();
 
-    // 2. Tap-to-move
     let lastTap = 0;
     $('#board').on('mousedown touchstart', '.square-55d63', function(e) {
         const timeNow = new Date().getTime();
@@ -587,7 +582,6 @@ $(document).ready(function() {
         }
     });
 
-    // 3. UI Buttons & Setup Handlers
     $('#gameMode').change(function() {
         const v = $(this).val();
         $('#difficultyContainer').toggle(v === 'ai');
@@ -595,13 +589,12 @@ $(document).ready(function() {
         
         if (v === 'online') {
             $('#onlineConfig').removeClass('hidden').addClass('flex');
-            initPeer();
+            createRoom();
             $('#startGameBtn').prop('disabled', true).addClass('opacity-50 cursor-not-allowed');
         } else {
             $('#onlineConfig').addClass('hidden').removeClass('flex');
             $('#startGameBtn').prop('disabled', false).removeClass('opacity-50 cursor-not-allowed');
-            if (peerConnection) { peerConnection.close(); peerConnection = null; }
-            if (peer) { peer.destroy(); peer = null; }
+            if (roomRef) { sendOnlineEvent('leave'); roomRef.off(); roomRef = null; }
         }
     });
 
@@ -614,7 +607,7 @@ $(document).ready(function() {
 
     $('#joinPeerBtn').click(function() {
         const id = $('#joinPeerId').val().trim();
-        if (id) connectToPeer(id);
+        if (id) joinRoom(id);
     });
 
     $('#boardTheme').change(function() {
@@ -625,10 +618,6 @@ $(document).ready(function() {
 
     $('#startGameBtn').click(() => {
         const mode = $('#gameMode').val();
-        if (mode === 'online' && !peerConnection) {
-            alert("Please wait for a friend to connect or join a room first.");
-            return;
-        }
 
         $('#setupScreen').removeClass('flex').addClass('hidden');
         $('#mainGameUI').removeClass('hidden').addClass('flex');
@@ -646,8 +635,7 @@ $(document).ready(function() {
         if (mode === 'online') {
             myOnlineColor = pColor;
             const guestColor = pColor === 'w' ? 'b' : 'w';
-            peerConnection.send({
-                type: 'start',
+            sendOnlineEvent('start', {
                 time: selectedTime,
                 theme: $('#boardTheme').val(),
                 guestColor: guestColor
@@ -681,8 +669,8 @@ $(document).ready(function() {
         }
         stopClock(); gameActive = false;
         
-        if (peerConnection) { peerConnection.close(); peerConnection = null; }
-        if (peer) { peer.destroy(); peer = null; $('#gameMode').val('ai').trigger('change'); }
+        if (roomRef) { sendOnlineEvent('leave'); roomRef.off(); roomRef = null; }
+        $('#gameMode').val('ai').trigger('change');
 
         $('#mainGameUI').removeClass('flex').addClass('hidden');
         $('#setupScreen').removeClass('hidden').addClass('flex');
@@ -708,8 +696,8 @@ $(document).ready(function() {
     $('#resignBtn').click(() => {
         if (game.game_over() || !gameActive) return;
         if (confirm("Are you sure you want to resign?")) {
-            if ($('#gameMode').val() === 'online' && peerConnection) {
-                peerConnection.send({ type: 'resign' });
+            if ($('#gameMode').val() === 'online' && roomRef) {
+                sendOnlineEvent('resign');
             }
             stopClock(); gameActive = false;
             const loser = game.turn() === 'w' ? 'White' : 'Black';
@@ -724,8 +712,8 @@ $(document).ready(function() {
         if (game.game_over() || !gameActive) return;
         
         const mode = $('#gameMode').val();
-        if (mode === 'online' && peerConnection) {
-            peerConnection.send({ type: 'draw_offer' });
+        if (mode === 'online' && roomRef) {
+            sendOnlineEvent('draw_offer');
             alert("Draw offer sent. Waiting for opponent...");
         } else if (mode === 'ai') {
             const aiScore = ($('#playerColor').val() === 'w' ? -currentEvalScore : currentEvalScore);
