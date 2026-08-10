@@ -22,13 +22,14 @@ let currentRoomId = null;
 
 // === ใส่ FIREBASE CONFIG ของคุณที่นี่ ===
 const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-    databaseURL: "https://YOUR_PROJECT_ID.firebasedatabase.app",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_MESSAGING_ID",
-    appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyADDH6zlPkYJbeefLM9e5N_xY96_23ZIO0",
+  authDomain: "elite-chess-arena.firebaseapp.com",
+  databaseURL: "https://elite-chess-arena-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "elite-chess-arena",
+  storageBucket: "elite-chess-arena.firebasestorage.app",
+  messagingSenderId: "554935042759",
+  appId: "1:554935042759:web:8a520b438d5975a8c7b4e2",
+  measurementId: "G-YFFGSSBB7G"
 };
 // ======================================
 
