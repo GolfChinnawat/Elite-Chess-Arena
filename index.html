@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elite Chess Arena</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { colors: { slate: { 850: '#151e2e', 900: '#0f172a' } } } }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    
+    <!-- เพิ่มไลบรารี PeerJS สำหรับระบบ Multiplayer -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans min-h-screen flex items-center justify-center p-4">
+
+    <!-- ================= SETUP SCREEN ================= -->
+    <div id="setupScreen" class="flex flex-col w-full max-w-md bg-slate-850 p-8 rounded-2xl border border-slate-700 shadow-2xl">
+        <div class="text-center mb-6">
+            <div class="inline-flex bg-indigo-600 p-4 rounded-xl shadow-indigo-500/50 shadow-lg mb-4">
+                <i class="fa-solid fa-chess-knight text-4xl"></i>
+            </div>
+            <h1 class="text-2xl font-black tracking-wide">Elite Chess Arena</h1>
+            <p class="text-sm text-slate-400 mt-1">Configure your game</p>
+        </div>
+
+        <div class="flex flex-col gap-4 mb-6">
+            <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1 tracking-wide">GAME MODE</label>
+                <select id="gameMode" class="w-full bg-slate-900 border border-slate-700 text-sm rounded-lg p-2.5 focus:ring focus:ring-indigo-500 outline-none">
+                    <option value="ai">Player vs AI</option>
+                    <option value="pvp">Player vs Player (Local)</option>
+                    <option value="online">Player vs Player (Online P2P)</option>
+                </select>
+            </div>
+
+            <!-- ส่วนตั้งค่าออนไลน์ (ซ่อนไว้ก่อน) -->
+            <div id="onlineConfig" class="hidden flex-col gap-3 p-4 bg-slate-800 rounded-lg border border-slate-700 shadow-inner">
+                <h4 class="text-xs font-bold text-emerald-400 tracking-wide"><i class="fa-solid fa-wifi mr-1"></i> ONLINE MULTIPLAYER</h4>
+                
+                <div class="flex flex-col gap-1">
+                    <label class="text-xs text-slate-400">Your Room ID (Give to friend):</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="myPeerId" readonly class="flex-1 bg-slate-900 border border-slate-700 text-sm rounded-lg p-2 text-indigo-300 font-mono" placeholder="Generating...">
+                        <button id="copyPeerIdBtn" class="bg-slate-700 hover:bg-slate-600 px-3 rounded-lg text-sm transition"><i class="fa-solid fa-copy"></i></button>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-1 mt-1">
+                    <label class="text-xs text-slate-400">Or Join Friend's Room ID:</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="joinPeerId" class="flex-1 bg-slate-900 border border-slate-700 text-sm rounded-lg p-2 font-mono" placeholder="Paste ID here">
+                        <button id="joinPeerBtn" class="bg-indigo-600 hover:bg-indigo-500 px-3 rounded-lg text-sm font-bold transition">Join</button>
+                    </div>
+                </div>
+                
+                <div id="onlineStatus" class="text-xs font-medium text-amber-400 mt-1 bg-slate-900 p-2 rounded border border-slate-700 text-center">
+                    Status: Offline
+                </div>
+            </div>
+
+            <div id="difficultyContainer">
+                <label class="block text-xs font-bold text-slate-400 mb-1 tracking-wide">AI DIFFICULTY</label>
+                <select id="difficulty" class="w-full bg-slate-900 border border-slate-700 text-sm rounded-lg p-2.5 focus:ring focus:ring-indigo-500 outline-none">
+                    <option value="easy">Easy (~1000 ELO)</option>
+                    <option value="medium" selected>Medium (~1600 ELO)</option>
+                    <option value="hard">Hard (~2300+ ELO)</option>
+                </select>
+            </div>
+            <div id="colorConfig">
+                <label class="block text-xs font-bold text-slate-400 mb-1 tracking-wide">PLAY AS (HOST)</label>
+                <select id="playerColor" class="w-full bg-slate-900 border border-slate-700 text-sm rounded-lg p-2.5 focus:ring focus:ring-indigo-500 outline-none">
+                    <option value="w" selected>White (Play First)</option>
+                    <option value="b">Black (Play Second)</option>
+                </select>
+            </div>
+            <div class="flex gap-4">
+                <div class="flex-1">
+                    <label class="block text-xs font-bold text-slate-400 mb-1 tracking-wide">TIME (MINS)</label>
+                    <select id="timeControl" class="w-full bg-slate-900 border border-slate-700 text-sm rounded-lg p-2.5 focus:ring focus:ring-indigo-500 outline-none">
+                        <option value="180">3 Min (Blitz)</option>
+                        <option value="300">5 Min (Blitz)</option>
+                        <option value="600" selected>10 Min (Rapid)</option>
+                        <option value="1800">30 Min (Classic)</option>
+                    </select>
+                </div>
+                <div class="flex-1">
+                    <label class="block text-xs font-bold text-slate-400 mb-1 tracking-wide">THEME</label>
+                    <select id="boardTheme" class="w-full bg-slate-900 border border-slate-700 text-sm rounded-lg p-2.5 focus:ring focus:ring-indigo-500 outline-none">
+                        <option value="slate">Slate</option>
+                        <option value="green">Green</option>
+                        <option value="wood">Wood</option>
+                        <option value="blue">Blue</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <button id="startGameBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-indigo-500/30 transition text-lg">
+            Start Game <i class="fa-solid fa-play ml-2"></i>
+        </button>
+    </div>
+
+    <!-- ================= MAIN GAME UI ================= -->
+    <div id="mainGameUI" class="hidden max-w-6xl w-full flex-col gap-6">
+        
+        <header class="flex justify-between items-center bg-slate-850 p-4 rounded-xl border border-slate-700 shadow-lg">
+            <div class="flex items-center gap-4">
+                <div class="bg-indigo-600 p-2.5 rounded-lg shadow-indigo-500/50 shadow-lg">
+                    <i class="fa-solid fa-chess-knight text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-wide">Elite Chess Arena</h1>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <button id="soundBtn" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                    <i id="soundIcon" class="fa-solid fa-volume-high text-indigo-400"></i>
+                </button>
+                <button id="newGameBtn" class="px-4 py-2 bg-rose-600 hover:bg-rose-500 rounded-lg text-sm font-bold shadow-lg transition flex items-center gap-2">
+                    <i class="fa-solid fa-gear"></i> Setup
+                </button>
+            </div>
+        </header>
+
+        <div class="flex flex-col lg:flex-row gap-6">
+            <div class="flex-1 max-w-[650px] mx-auto lg:mx-0 flex flex-col gap-4">
+                <div class="bg-slate-850 border border-slate-700 p-3 rounded-xl flex justify-between items-center shadow-md">
+                    <div class="flex items-center gap-3">
+                        <div id="topPlayerIcon" class="w-10 h-10 bg-slate-700 rounded-full flex items-center justify-center">
+                            <i class="fa-solid fa-robot text-slate-300"></i>
+                        </div>
+                        <div>
+                            <div class="font-semibold" id="topPlayerName">AI</div>
+                            <div id="top-captured" class="flex h-6 mt-1"></div>
+                        </div>
+                    </div>
+                    <div id="top-clock" class="font-mono text-lg font-bold bg-slate-900 px-3 py-1 rounded-md text-slate-400 border border-slate-700">10:00</div>
+                </div>
+
+                <div class="flex items-stretch gap-3">
+                    <div class="w-6 md:w-8 bg-slate-800 rounded-lg overflow-hidden flex flex-col justify-end border border-slate-700 shadow-inner relative select-none">
+                        <div id="evalText" class="absolute inset-0 flex items-center justify-center text-[10px] md:text-xs font-bold text-slate-400 z-10 pointer-events-none transition-colors duration-300">0.0</div>
+                        <div id="evalBarWhite" class="w-full bg-slate-200 transition-all duration-700 ease-out" style="height: 50%;"></div>
+                    </div>
+                    <div id="board" class="flex-1 shadow-2xl relative w-full"></div>
+                </div>
+
+                <div class="bg-slate-850 border border-slate-700 p-3 rounded-xl flex justify-between items-center shadow-md">
+                    <div class="flex items-center gap-3">
+                        <div id="bottomPlayerIcon" class="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center">
+                            <i class="fa-regular fa-user"></i>
+                        </div>
+                        <div>
+                            <div class="font-semibold" id="bottomPlayerName">You</div>
+                            <div id="bottom-captured" class="flex h-6 mt-1"></div>
+                        </div>
+                    </div>
+                    <div id="bottom-clock" class="font-mono text-lg font-bold bg-slate-900 px-3 py-1 rounded-md text-emerald-400 border border-slate-700">10:00</div>
+                </div>
+            </div>
+
+            <div class="w-full lg:w-[400px] flex flex-col gap-5">
+                <div class="bg-slate-850 border border-slate-700 p-5 rounded-xl shadow-md">
+                    <h3 class="text-xs font-bold text-slate-400 tracking-wider mb-4">GAME TOOLS</h3>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button id="undoBtn" class="bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg text-sm font-medium transition flex items-center justify-center">
+                            <i class="fa-solid fa-rotate-left mr-2 text-amber-400"></i> Undo
+                        </button>
+                        <button id="hintBtn" class="bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg text-sm font-medium transition flex items-center justify-center">
+                            <i class="fa-solid fa-lightbulb mr-2 text-yellow-300"></i> Hint
+                        </button>
+                        <button id="resignBtn" class="bg-rose-900/40 hover:bg-rose-800/60 text-rose-300 border border-rose-700/50 py-2.5 rounded-lg text-sm font-medium transition flex items-center justify-center">
+                            <i class="fa-solid fa-flag mr-2"></i> Resign
+                        </button>
+                        <button id="drawBtn" class="bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg text-sm font-medium transition flex items-center justify-center">
+                            <i class="fa-solid fa-handshake mr-2 text-sky-300"></i> Offer Draw
+                        </button>
+                        <button id="pgnBtn" class="col-span-2 bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg text-sm font-medium transition flex items-center justify-center mt-1">
+                            <i class="fa-solid fa-download mr-2 text-emerald-400"></i> Export PGN
+                        </button>
+                    </div>
+                </div>
+
+                <div id="statusBanner" class="bg-indigo-900/30 border border-indigo-500/50 p-4 rounded-xl flex items-start gap-3">
+                    <i class="fa-solid fa-circle-info text-indigo-400 mt-1"></i>
+                    <div>
+                        <div id="statusTitle" class="font-bold text-indigo-200">Ready</div>
+                        <div id="statusDesc" class="text-sm text-indigo-300/80">Waiting to start...</div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-850 border border-slate-700 rounded-xl flex flex-col flex-1 shadow-md min-h-[250px]">
+                    <div class="p-4 border-b border-slate-700 flex justify-between items-center">
+                        <h3 class="text-xs font-bold text-slate-400 tracking-wider">MOVE HISTORY</h3>
+                        <span id="moveCount" class="text-xs text-slate-500">0 moves</span>
+                    </div>
+                    <div class="flex-1 overflow-y-auto p-4 max-h-[300px]">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-slate-500 font-medium">
+                                <tr><th class="pb-2 w-16">#</th><th class="pb-2 w-1/2">White</th><th class="pb-2 w-1/2">Black</th></tr>
+                            </thead>
+                            <tbody id="historyBody" class="text-slate-300"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Promotion Modal -->
+    <div id="promotionModal" class="fixed inset-0 bg-black/60 hidden items-center justify-center z-[60] backdrop-blur-sm">
+        <div class="bg-slate-800 border border-slate-600 rounded-2xl p-6 shadow-2xl text-center transform scale-100">
+            <h3 class="text-lg font-bold text-slate-200 mb-4">Choose Promotion</h3>
+            <div id="promoPieces" class="flex gap-4 justify-center"></div>
+        </div>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div id="gameOverModal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 transition-opacity backdrop-blur-sm">
+        <div class="bg-slate-800 border border-slate-600 rounded-2xl p-8 max-w-md w-full text-center shadow-2xl transform scale-95 transition-transform duration-300">
+            <i id="modalIcon" class="fa-solid fa-trophy text-6xl mb-4"></i>
+            <h2 id="modalTitle" class="text-4xl font-black mb-2 uppercase tracking-widest text-slate-100">Game Over</h2>
+            <p id="modalDesc" class="text-slate-400 text-lg mb-8 font-medium">White wins</p>
+            <div class="flex gap-4">
+                <button id="modalCloseBtn" class="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-3 px-4 rounded-lg transition">Close</button>
+                <button id="modalPlayAgainBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg shadow-indigo-500/30 transition">New Game</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
