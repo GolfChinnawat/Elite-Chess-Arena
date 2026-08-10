@@ -15,9 +15,9 @@ let pendingPromotionMove = null;
 // Online Multiplayer Variables
 let peer = null;
 let peerConnection = null;
-let isReceivingMove = false; // ป้องกัน infinite loop ส่งข้อมูลไปมา
-let myOnlineColor = 'w';     // กำหนดว่าเราสีอะไรในโหมดออนไลน์
-let onlineRole = null;       // 'host' หรือ 'guest'
+let isReceivingMove = false;
+let myOnlineColor = 'w';
+let onlineRole = null;
 
 const pieceValues = { 'p': 1, 'n': 3, 'b': 3, 'r': 5, 'q': 9 };
 
@@ -64,55 +64,76 @@ function playSound(type) {
 // --- PeerJS / Online Logic ---
 function initPeer() {
     if (peer) return;
-    $('#onlineStatus').text('Status: Connecting to PeerJS server...').removeClass('text-emerald-400').addClass('text-amber-400');
+    $('#onlineStatus').text('Status: Connecting to Server...').removeClass('text-emerald-400 text-red-400').addClass('text-amber-400');
     
-    peer = new Peer();
+    // ฟังก์ชันสร้างรหัส 6 หลัก
+    function createPeerWithPIN() {
+        const pin = Math.floor(100000 + Math.random() * 900000).toString();
+        peer = new Peer(pin);
+
+        peer.on('open', function(id) {
+            $('#myPeerId').val(id);
+            $('#onlineStatus').text('Status: Waiting for friend to join...');
+        });
+
+        peer.on('connection', function(conn) {
+            peerConnection = conn;
+            onlineRole = 'host';
+            setupConnectionHandlers(conn);
+            $('#onlineStatus').text('Status: Friend joined! Click Start Game.').removeClass('text-amber-400 text-red-400').addClass('text-emerald-400');
+            $('#joinPeerBtn').prop('disabled', true);
+            $('#joinPeerId').prop('disabled', true);
+        });
+
+        peer.on('error', function(err) {
+            // ถ้ารหัส 6 หลักนี้มีคนอื่นใช้อยู่ ให้สุ่มใหม่
+            if (err.type === 'unavailable-id') {
+                peer.destroy();
+                createPeerWithPIN();
+            } else {
+                console.error(err);
+                $('#onlineStatus').text('Status: Error (' + err.type + ')').removeClass('text-emerald-400 text-amber-400').addClass('text-red-400');
+            }
+        });
+    }
     
-    peer.on('open', function(id) {
-        $('#myPeerId').val(id);
-        $('#onlineStatus').text('Status: Waiting for friend to join...');
-    });
-
-    // เมื่อมีคน (Guest) พยายามเชื่อมต่อมาหาเรา (Host)
-    peer.on('connection', function(conn) {
-        peerConnection = conn;
-        onlineRole = 'host';
-        setupConnectionHandlers(conn);
-        $('#onlineStatus').text('Status: Friend joined! Click Start Game.').removeClass('text-amber-400').addClass('text-emerald-400');
-        $('#joinPeerBtn').prop('disabled', true);
-        $('#joinPeerId').prop('disabled', true);
-    });
-
-    peer.on('error', function(err) {
-        console.error(err);
-        $('#onlineStatus').text('Status: Error (' + err.type + ')').removeClass('text-emerald-400').addClass('text-red-400');
-    });
+    createPeerWithPIN();
 }
 
 function connectToPeer(id) {
     if (!peer) return;
     $('#onlineStatus').text('Status: Connecting to host...').removeClass('text-emerald-400 text-red-400').addClass('text-amber-400');
-    const conn = peer.connect(id);
     
+    const conn = peer.connect(id, { reliable: true });
+    
+    // เพิ่ม Timeout ป้องกันการค้าง 10 วินาที
+    const connectionTimeout = setTimeout(() => {
+        if (onlineRole !== 'guest') {
+            $('#onlineStatus').text('Status: Connection failed. Check ID.').removeClass('text-amber-400 text-emerald-400').addClass('text-red-400');
+            conn.close();
+        }
+    }, 10000);
+
     conn.on('open', function() {
+        clearTimeout(connectionTimeout); // ยกเลิก Timeout เมื่อเชื่อมสำเร็จ
         peerConnection = conn;
         onlineRole = 'guest';
         setupConnectionHandlers(conn);
-        $('#onlineStatus').text('Status: Connected! Waiting for host to start...').removeClass('text-amber-400').addClass('text-emerald-400');
-        // Guest ไม่มีสิทธิ์กดเริ่มเกมเอง ต้องรอ Host
+        $('#onlineStatus').text('Status: Connected! Waiting for host to start...').removeClass('text-amber-400 text-red-400').addClass('text-emerald-400');
         $('#startGameBtn').prop('disabled', true).addClass('opacity-50 cursor-not-allowed');
+    });
+
+    conn.on('error', function(err) {
+        clearTimeout(connectionTimeout);
+        $('#onlineStatus').text('Status: Error connecting.').removeClass('text-amber-400 text-emerald-400').addClass('text-red-400');
     });
 }
 
-// รับข้อมูลจากอีกฝั่ง
 function setupConnectionHandlers(conn) {
     conn.on('data', function(data) {
-        
         if (data.type === 'start') {
-            // Guest ได้รับคำสั่งให้เริ่มเกมจาก Host
             myOnlineColor = data.guestColor;
             
-            // ตั้งค่า UI ให้เหมือน Host
             const selectedTheme = boardThemes[data.theme];
             document.documentElement.style.setProperty('--board-light', selectedTheme.light);
             document.documentElement.style.setProperty('--board-dark', selectedTheme.dark);
@@ -135,11 +156,10 @@ function setupConnectionHandlers(conn) {
             updateUI(); updateClockUI(); requestEvaluation();
         } 
         else if (data.type === 'move') {
-            // ได้รับตาเดินจากเพื่อน
             isReceivingMove = true;
             let m = game.move(data.move);
             if(m) {
-                timers = data.timers; // ซิงค์เวลา
+                timers = data.timers; 
                 board.position(game.fen());
                 afterMove(m);
             }
@@ -175,7 +195,7 @@ function setupConnectionHandlers(conn) {
         alert("Peer disconnected.");
         peerConnection = null;
         onlineRole = null;
-        $('#newGameBtn').click(); // กลับหน้า Setup
+        $('#newGameBtn').click();
     });
 }
 
@@ -297,10 +317,8 @@ function onDragStart(source, piece) {
     const mode = $('#gameMode').val();
     const turn = game.turn();
     
-    // โหมด AI: ห้ามจับหมาก AI
     if (mode === 'ai' && turn !== $('#playerColor').val()) return false;
     
-    // โหมด Online: ห้ามจับหมากที่ไม่ใช่สีเรา หรือห้ามเดินถ้าไม่ใช่ตาเรา
     if (mode === 'online') {
         if (turn !== myOnlineColor) return false;
         if (piece.search(myOnlineColor) === -1) return false;
@@ -342,7 +360,6 @@ function afterMove(move) {
     const mode = $('#gameMode').val();
     const pColor = $('#playerColor').val();
 
-    // 🔴 ส่งข้อมูลข้ามเครือข่ายสำหรับ Online Mode
     if (mode === 'online' && !isReceivingMove && peerConnection) {
         peerConnection.send({
             type: 'move',
@@ -357,7 +374,7 @@ function afterMove(move) {
         if (game.turn() !== pColor) setTimeout(makeAiMove, 250);
         else requestEvaluation();
     } else if (mode === 'online' && !game.game_over()) {
-        requestEvaluation(); // สั่งอัปเดต Eval ในโหมดออนไลน์ด้วย
+        requestEvaluation(); 
     }
 }
 
@@ -392,7 +409,7 @@ function updatePlayerLabels() {
         $('#topPlayerName').text('Opponent (' + (myOnlineColor === 'w' ? 'Black' : 'White') + ')');
         $('#bottomPlayerIcon').html(userIcon).removeClass('bg-slate-700 bg-sky-700').addClass('bg-indigo-600');
         $('#topPlayerIcon').html(friendIcon).removeClass('bg-indigo-600 bg-slate-700').addClass('bg-sky-800');
-    } else { // AI
+    } else { 
         const pColor = $('#playerColor').val();
         const aiText = `AI (${$('#difficulty option:selected').text().split(' ')[0]})`;
         if (pColor === 'w') {
@@ -541,7 +558,6 @@ $('#gameMode').change(function() {
     } else {
         $('#onlineConfig').addClass('hidden').removeClass('flex');
         $('#startGameBtn').prop('disabled', false).removeClass('opacity-50 cursor-not-allowed');
-        // Clean up peer if leaving online mode
         if (peerConnection) { peerConnection.close(); peerConnection = null; }
         if (peer) { peer.destroy(); peer = null; }
     }
@@ -588,7 +604,7 @@ $('#startGameBtn').click(() => {
             theme: $('#boardTheme').val(),
             guestColor: guestColor
         });
-        $('#hintBtn, #undoBtn').hide(); // Hide single-player tools
+        $('#hintBtn, #undoBtn').hide(); 
     } else {
         $('#hintBtn, #undoBtn').show();
     }
@@ -617,13 +633,8 @@ $('#newGameBtn').click(() => {
     }
     stopClock(); gameActive = false;
     
-    if (peerConnection) {
-        peerConnection.close(); peerConnection = null;
-    }
-    if (peer) {
-        peer.destroy(); peer = null;
-        $('#gameMode').val('ai').trigger('change');
-    }
+    if (peerConnection) { peerConnection.close(); peerConnection = null; }
+    if (peer) { peer.destroy(); peer = null; $('#gameMode').val('ai').trigger('change'); }
 
     $('#mainGameUI').removeClass('flex').addClass('hidden');
     $('#setupScreen').removeClass('hidden').addClass('flex');
@@ -707,6 +718,20 @@ $('#modalCloseBtn').click(() => {
 
 $('#modalPlayAgainBtn').click(() => {
     $('#modalCloseBtn').click(); $('#newGameBtn').click();
+});
+
+// Board Themes Event
+const boardThemes = {
+    slate: { light: '#e2e8f0', dark: '#64748b' },
+    green: { light: '#ebecd0', dark: '#779556' },
+    wood: { light: '#f0d9b5', dark: '#b58863' },
+    blue: { light: '#dee3e6', dark: '#8ca2ad' }
+};
+
+$('#boardTheme').change(function() {
+    const selectedTheme = boardThemes[$(this).val()];
+    document.documentElement.style.setProperty('--board-light', selectedTheme.light);
+    document.documentElement.style.setProperty('--board-dark', selectedTheme.dark);
 });
 
 // --- Start App ---
