@@ -18,8 +18,9 @@
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     
-    <!-- เพิ่มไลบรารี PeerJS สำหรับระบบ Multiplayer -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- Firebase SDK (ใช้เวอร์ชัน 9 compat เพื่อความง่ายกับ Vanilla JS) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     
     <link rel="stylesheet" href="style.css">
 </head>
@@ -41,18 +42,18 @@
                 <select id="gameMode" class="w-full bg-slate-900 border border-slate-700 text-sm rounded-lg p-2.5 focus:ring focus:ring-indigo-500 outline-none">
                     <option value="ai">Player vs AI</option>
                     <option value="pvp">Player vs Player (Local)</option>
-                    <option value="online">Player vs Player (Online P2P)</option>
+                    <option value="online">Player vs Player (Firebase Online)</option>
                 </select>
             </div>
 
-            <!-- ส่วนตั้งค่าออนไลน์ (ซ่อนไว้ก่อน) -->
+            <!-- ส่วนตั้งค่าออนไลน์ -->
             <div id="onlineConfig" class="hidden flex-col gap-3 p-4 bg-slate-800 rounded-lg border border-slate-700 shadow-inner">
-                <h4 class="text-xs font-bold text-emerald-400 tracking-wide"><i class="fa-solid fa-wifi mr-1"></i> ONLINE MULTIPLAYER</h4>
+                <h4 class="text-xs font-bold text-emerald-400 tracking-wide"><i class="fa-solid fa-cloud mr-1"></i> CLOUD MULTIPLAYER</h4>
                 
                 <div class="flex flex-col gap-1">
                     <label class="text-xs text-slate-400">Your Room ID (Give to friend):</label>
                     <div class="flex gap-2">
-                        <input type="text" id="myPeerId" readonly class="flex-1 bg-slate-900 border border-slate-700 text-sm rounded-lg p-2 text-indigo-300 font-mono" placeholder="Generating...">
+                        <input type="text" id="myPeerId" readonly class="flex-1 bg-slate-900 border border-slate-700 text-sm rounded-lg p-2 text-indigo-300 font-mono font-bold tracking-widest text-center" placeholder="Wait...">
                         <button id="copyPeerIdBtn" class="bg-slate-700 hover:bg-slate-600 px-3 rounded-lg text-sm transition"><i class="fa-solid fa-copy"></i></button>
                     </div>
                 </div>
@@ -60,13 +61,13 @@
                 <div class="flex flex-col gap-1 mt-1">
                     <label class="text-xs text-slate-400">Or Join Friend's Room ID:</label>
                     <div class="flex gap-2">
-                        <input type="text" id="joinPeerId" class="flex-1 bg-slate-900 border border-slate-700 text-sm rounded-lg p-2 font-mono" placeholder="Paste ID here">
+                        <input type="text" id="joinPeerId" class="flex-1 bg-slate-900 border border-slate-700 text-sm rounded-lg p-2 font-mono font-bold tracking-widest text-center" placeholder="123456" maxlength="6">
                         <button id="joinPeerBtn" class="bg-indigo-600 hover:bg-indigo-500 px-3 rounded-lg text-sm font-bold transition">Join</button>
                     </div>
                 </div>
                 
                 <div id="onlineStatus" class="text-xs font-medium text-amber-400 mt-1 bg-slate-900 p-2 rounded border border-slate-700 text-center">
-                    Status: Offline
+                    Status: Connecting to database...
                 </div>
             </div>
 
